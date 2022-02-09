@@ -1,28 +1,128 @@
 ---
-title: "MachineLearning"
+title: "Machine Learning - Predicting exercise execution type"
+author: "Martin Bühler, Feb 15, 2022"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# 1 Management summary
+In this project we use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+The participants were asked to barbell lifts correctly and incorrectly in 5 different ways
+and we want to predict in which of the 5 manners the exercise was done.
+
+Because the outcome is a factor variable we look at predicting with trees, random forests and boosting.
+The best option turns out to be the random forest algorithm where we can achieve an accuracy of over 0.99
+and therefore an expected out of sample error of less than 1%.
+
+We can confirm that with both, the random forest and boost algorithm (with 0.632 Bootstrap for cross validation),
+we have the same prediction on the test set.
+Which also serves as further cross validation evidence on the accuracy of our model.
+
+# 2 Cleaning of data
+
+## 2.1 Data inspection
+First of all, the relevant libraries for this project are loaded,
+the training data is stored in the data frame df.training
+and the test data is imported in the data frame df.testing.
+
+```{r, results='hide', message=FALSE, warning=FALSE}
+# Initialize libraries
+library(caret)
+library(rattle)
+library(randomForest)
+library(gbm)
+library(ggplot2)
+
+# Extract the data
+df.training <- read.csv2("pml-training.csv", sep = ",", header = TRUE)
+df.testing <- read.csv2("pml-testing.csv", sep = ",", header = TRUE)
 ```
 
-## R Markdownx
+## 2.2 Data inspection
+When inspecting the data we can observe the following:  
+- Some of the columns contain only little data (2% or 406 of 19216 rows are only filled in those columns)  
+--> The same columns in the training data set are not filled either and using them for prediction is therefore not useful, thus we can drop them from the training set  
+- Also some columns are of type string when containing numbers  
+- Further the first seven columns are descriptive and can't be used for prediction  
+- The class column isn't a factor column and has to be converted too  
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r, results='hide'}
+# Inspect the data
+str(df.training, list.len=ncol(df.training))
+colSums(is.na(df.training) | df.training == "")
 ```
 
-## Including Plots
+## 2.3 Data cleaning
+The following code is implementing the findings as observed in the chapter "2.2 Data inspection".
+The resulting data frames keep the same name.
 
-You can also embed plots, for example:
+```{r}
+# Drop columns with many invalid entries
+df.training <- df.training[ ,colSums(is.na(df.training) | df.training == "") == 0]
+df.testing <- df.testing[ ,colSums(is.na(df.testing) | df.testing == "") == 0]
+# Change data type of string columns to 
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+# Drop descriptive columns
+df.training <- df.training[, 8:ncol(df.training)]
+df.testing <- df.testing[, 8:ncol(df.testing)]
+
+# Convert columns to numeric
+df.training[, c(1:(ncol(df.training)-1))] <- sapply(df.training[, c(1:(ncol(df.training)-1))], as.numeric)
+df.testing[, c(1:(ncol(df.testing)-1))] <- sapply(df.testing[, c(1:(ncol(df.testing)-1))], as.numeric)
+
+# Convert last column to factor column in training set
+df.training$classe <- as.factor(df.training$classe)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+# 3 Machine learning algorithms
+
+## 3.1 Predicting with trees
+
+First we try Predicting with trees, an algorithm which is relatively efficient.
+
+```{r}
+fit <- train(classe ~ . , method="rpart", data=df.training)
+fancyRpartPlot(fit$finalModel)
+```
+It turns out that in the final model not all factors of the classe variable are present.
+The variable D is not showing up in the decision tree
+and therefore we have to find another prediction algorithm.  
+  
+Nevertheless its useful to look at the boxplots to better understand the variables 
+that indeed showed up in the decision tree
+and we can observe quite a big difference between the classes for some of the variables.  
+
+```{r}
+par(mfrow=c(2,2))
+plot(df.training[c(ncol(df.training),1)])
+plot(df.training[c(ncol(df.training),38)])
+plot(df.training[c(ncol(df.training),40)])
+plot(df.training[c(ncol(df.training),41)])
+```
+
+## 3.2 Random Forests and Boosting 
+
+The following code is training on the Random Forest and Boosting algorithm
+and showing their respective output.
+```{r}
+fitControl <- trainControl(method = "boot632", number = 1, summaryFunction=defaultSummary)
+fit.rf <- train(classe ~ ., method="rf", metric='Accuracy', trControl = fitControl, data=df.training)
+fit.gbm <- train(classe ~ ., method="gbm", metric='Accuracy', trControl = fitControl, data=df.training, verbose=FALSE)
+fit.rf
+fit.gbm
+```
+# 4 Conclusion
+
+From the output of the train function in the caret package we can conclude
+that both selected models are very accurate
+- Random Forest: > 0.995 accuracy
+- Boosting: > 0.966 accuracy
+
+Also when looking at the the prediction of the testing set,
+we can confirm that both models agree on the predictions. 
+
+```{r}
+identical(predict(fit.rf,df.testing), predict(fit.gbm,df.testing))
+```
+
+
+
