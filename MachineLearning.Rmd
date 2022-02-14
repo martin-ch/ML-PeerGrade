@@ -80,7 +80,9 @@ df.training$classe <- as.factor(df.training$classe)
 First we try Predicting with trees, an algorithm which is relatively efficient.
 
 ```{r}
-fit <- train(classe ~ . , method="rpart", data=df.training)
+
+ctrl = rpart.control(maxdepth=6, cp=0)
+fit <- train(classe ~ . , method="rpart", data=df.training, control=ctrl)
 fancyRpartPlot(fit$finalModel)
 ```
 It turns out that in the final model not all factors of the classe variable are present.
